@@ -1,0 +1,5 @@
+{
+  "model": "qwen2.5:7b-instruct",
+  "prompt": "只输出JSON：{\"ok\":true}",
+  "stream": false
+}

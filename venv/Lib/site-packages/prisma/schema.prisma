@@ -1,0 +1,53 @@
+// Prisma schema for AI Debug Copilot persistence.
+
+generator client {
+  provider = "prisma-client-py"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DebugSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  Message[]
+
+  @@index([updatedAt])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  sessionId      String       @db.Uuid
+  role           String       @db.VarChar(20)
+  language       String?      @db.VarChar(50)
+  errorText      String?
+  codeSnippet    String?
+  assistantJson  Json?        @db.JsonB
+  rawModelOutput String?
+  createdAt      DateTime     @default(now())
+
+  session     DebugSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  debugResult DebugResult?
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+model DebugResult {
+  id             String   @id @default(uuid()) @db.Uuid
+  messageId      String   @unique @db.Uuid
+  errorType      String
+  rootCause      Json     @db.JsonB
+  fixSuggestions Json     @db.JsonB
+  prevention     Json     @db.JsonB
+  rawModelOutput String
+  modelName      String
+  promptVersion  String
+  createdAt      DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,5 @@
+{
+  "language": "ts",
+  "errorText": "TypeError: xxx is not a function",
+  "codeSnippet": "const a=b()"
+}
