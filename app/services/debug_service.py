@@ -15,8 +15,8 @@ import re
 from typing import Any
 
 from ..ollama_client import call_ollama
-from ..prompt import PROMPT_TEMPLATE
-from ..schemas import DebugRequest
+from ..prompt import DEBUG_PROMPT_TEMPLATE, PARSE_PROMPT_TEMPLATE
+from ..schemas import DebugRequest, ParseRequest
 
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,76 @@ async def _run_llm(prompt: str) -> tuple[dict, str]:
         return obj_retry, raw_retry
 
 
+def _parse_json_output(raw: str, *, context: str) -> dict:
+    """
+    解析任意 JSON 输出（不做字段校验）。
+
+    Args:
+        raw: 模型原始输出文本。
+        context: 解析上下文标识（用于日志定位）。
+
+    Returns:
+        解析后的 JSON 对象。
+
+    Raises:
+        json.JSONDecodeError: JSON 解析失败。
+    """
+    raw_stripped = _strip_code_fences(raw)
+    try:
+        return json.loads(raw_stripped)
+    except json.JSONDecodeError:
+        _log_raw_snippet(raw, f"{context}:json")
+        raise
+
+
+async def _run_llm_json(prompt: str) -> tuple[dict, str]:
+    """
+    调用 Ollama 并解析 JSON 输出，失败时重试一次（不做结构化校验）。
+
+    Args:
+        prompt: 发送给模型的提示词。
+
+    Returns:
+        (解析后的 JSON, 原始模型输出)。
+
+    Raises:
+        json.JSONDecodeError: JSON 解析失败。
+        Exception: 调用模型失败或发生其他未知异常。
+    """
+    raw = await call_ollama(prompt)
+    try:
+        obj = _parse_json_output(raw, context="parse:first")
+        return obj, raw
+    except json.JSONDecodeError:
+        retry_prompt = (
+            prompt
+            + "\n\nYour output did not meet the required format. "
+            "Please output JSON only."
+        )
+        raw_retry = await call_ollama(retry_prompt)
+        obj_retry = _parse_json_output(raw_retry, context="parse:retry")
+        return obj_retry, raw_retry
+
+
+async def run_parse(req: ParseRequest) -> tuple[dict, str]:
+    """
+    运行解析抽取流程，不做任何数据库写入。
+
+    Args:
+        req: 解析请求参数（包含 raw_input）。
+
+    Returns:
+        (结构化解析结果, 原始模型输出)。
+
+    Raises:
+        json.JSONDecodeError: JSON 解析失败。
+        Exception: 调用模型失败或发生其他未知异常。
+    """
+    prompt = PARSE_PROMPT_TEMPLATE.format(raw_input=req.raw_input)
+    obj, raw = await _run_llm_json(prompt)
+    return obj, raw
+
+
 async def run_debug(req: DebugRequest) -> tuple[dict, str]:
     """
     运行调试推理流程，不做任何数据库写入。
@@ -209,11 +279,19 @@ async def run_debug(req: DebugRequest) -> tuple[dict, str]:
         SchemaValidationError: 结构化校验失败。
         Exception: 调用模型失败或发生其他未知异常。
     """
-    prompt = PROMPT_TEMPLATE.format(
-        language=req.language,
-        similar_bugs="(none yet)",
-        error_text=req.errorText,
-        code_snippet=req.codeSnippet or "(not provided)",
+    parsed = req.parsed or {}
+    prompt = DEBUG_PROMPT_TEMPLATE.format(
+        raw_input=req.raw_input,
+        language_guess=parsed.get("language_guess", "unknown"),
+        top_error_line=parsed.get("top_error_line", ""),
+        error_text=parsed.get("error_text", ""),
+        stack_trace_lines_json=json.dumps(parsed.get("stack_trace_lines", []), ensure_ascii=False),
+        code_blocks_json=json.dumps(parsed.get("code_blocks", []), ensure_ascii=False),
+        logs_json=json.dumps(parsed.get("logs", []), ensure_ascii=False),
+        file_paths_json=json.dumps(parsed.get("file_paths", []), ensure_ascii=False),
+        environment_hints_json=json.dumps(parsed.get("environment_hints", {}), ensure_ascii=False),
+        user_intent=parsed.get("user_intent", ""),
+        similar_bugs=req.similar_bugs or "",
     )
     obj, raw = await _run_llm(prompt)
     return obj, raw
