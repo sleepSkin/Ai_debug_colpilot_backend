@@ -46,6 +46,84 @@ class ParseRequest(_BaseSchema):
     )
 
 
+class ParseCodeBlock(_BaseSchema):
+    """
+    /parse 输出中的代码块结构。
+    """
+
+    language: Literal["ts", "js", "python", "unknown"] = Field(
+        description="代码块语言猜测。",
+    )
+    content: str = Field(
+        description="代码块原文。",
+    )
+
+
+class ParseEnvironmentHints(_BaseSchema):
+    """
+    /parse 输出中的环境提示信息。
+    """
+
+    os: str = Field(
+        default="",
+        description="操作系统提示。",
+    )
+    runtime: str = Field(
+        default="",
+        description="运行时提示（如 Node/Python 版本等）。",
+    )
+    framework: str = Field(
+        default="",
+        description="框架提示（如 Next.js/FastAPI 等）。",
+    )
+    versions: Dict[str, str] = Field(
+        default_factory=dict,
+        description="版本信息键值对。",
+    )
+
+
+class ParseResponse(_BaseSchema):
+    """
+    /parse 响应体 Schema。
+
+    用途：
+    - 将 raw_input 解析为结构化字段，供 /debug 阶段使用。
+    """
+
+    language_guess: Literal["ts", "js", "python", "unknown"] = Field(
+        description="语言猜测。",
+    )
+    top_error_line: str = Field(
+        description="最关键的首行错误信息。",
+    )
+    error_text: str = Field(
+        description="错误摘要文本。",
+    )
+    stack_trace_lines: List[str] = Field(
+        description="堆栈按行列表。",
+    )
+    code_blocks: List[ParseCodeBlock] = Field(
+        description="提取到的代码块列表。",
+    )
+    logs: List[str] = Field(
+        description="可疑日志行列表。",
+    )
+    file_paths: List[str] = Field(
+        description="提取出的文件路径列表。",
+    )
+    environment_hints: ParseEnvironmentHints = Field(
+        description="环境提示信息。",
+    )
+    user_intent: str = Field(
+        description="用户意图提取结果。",
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="抽取结果置信度（0~1）。",
+    )
+
+
 class DebugRequest(_BaseSchema):
     """
     /debug 请求体 Schema。
