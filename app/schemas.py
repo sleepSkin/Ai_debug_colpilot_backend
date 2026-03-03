@@ -32,38 +32,116 @@ class _BaseSchema(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ParseRequest(_BaseSchema):
+    """
+    /parse 请求体 Schema。
+
+    用途：
+    - 接收原始用户输入并触发解析抽取。
+    """
+
+    raw_input: str = Field(
+        min_length=1,
+        description="用户粘贴的原始输入文本。",
+    )
+
+
+class ParseCodeBlock(_BaseSchema):
+    """
+    /parse 输出中的代码块结构。
+    """
+
+    language: Literal["ts", "js", "python", "unknown"] = Field(
+        description="代码块语言猜测。",
+    )
+    content: str = Field(
+        description="代码块原文。",
+    )
+
+
+class ParseEnvironmentHints(_BaseSchema):
+    """
+    /parse 输出中的环境提示信息。
+    """
+
+    os: str = Field(
+        default="",
+        description="操作系统提示。",
+    )
+    runtime: str = Field(
+        default="",
+        description="运行时提示（如 Node/Python 版本等）。",
+    )
+    framework: str = Field(
+        default="",
+        description="框架提示（如 Next.js/FastAPI 等）。",
+    )
+    versions: Dict[str, str] = Field(
+        default_factory=dict,
+        description="版本信息键值对。",
+    )
+
+
+class ParseResponse(_BaseSchema):
+    """
+    /parse 响应体 Schema。
+
+    用途：
+    - 将 raw_input 解析为结构化字段，供 /debug 阶段使用。
+    """
+
+    language_guess: Literal["ts", "js", "python", "unknown"] = Field(
+        description="语言猜测。",
+    )
+    top_error_line: str = Field(
+        description="最关键的首行错误信息。",
+    )
+    error_text: str = Field(
+        description="错误摘要文本。",
+    )
+    stack_trace_lines: List[str] = Field(
+        description="堆栈按行列表。",
+    )
+    code_blocks: List[ParseCodeBlock] = Field(
+        description="提取到的代码块列表。",
+    )
+    logs: List[str] = Field(
+        description="可疑日志行列表。",
+    )
+    file_paths: List[str] = Field(
+        description="提取出的文件路径列表。",
+    )
+    environment_hints: ParseEnvironmentHints = Field(
+        description="环境提示信息。",
+    )
+    user_intent: str = Field(
+        description="用户意图提取结果。",
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="抽取结果置信度（0~1）。",
+    )
+
+
 class DebugRequest(_BaseSchema):
     """
     /debug 请求体 Schema。
 
     用途：
-    - 接收前端发起的单次 debug 请求。
-
-    字段设计决策：
-    - 保留 errorText/codeSnippet 的 camelCase 命名，避免现有前端 422。
-    - 同时通过 alias别名 兼容 snake_case（error_text/code_snippet）。
-
-    与其他 Schema 关系：
-    - 对应 DebugResponse 的输入。
+    - 接收 parse 阶段后的结构化信息并触发调试推理。
     """
 
-    language: Literal["ts", "python"] = Field(
-        description="代码语言，当前仅支持 ts/python。示例：'ts'。",
-    )
-    errorText: str = Field(
+    raw_input: str = Field(
         min_length=1,
-        validation_alias=AliasChoices("errorText", "error_text"),
-        description="错误信息文本（用户输入）。只有 role=user 时才有意义。示例：'TypeError: ...'。",
+        description="用户粘贴的原始输入文本（用于补充信息）。",
     )
-    codeSnippet: str = Field(
-        default="",
-        validation_alias=AliasChoices("codeSnippet", "code_snippet"),
-        description="出错代码片段（用户输入，可为空）。只有 role=user 时才有意义。",
+    parsed: Dict[str, Any] = Field(
+        description="Parse 阶段输出的结构化 JSON。",
     )
-    session_id: Optional[str] = Field(
+    similar_bugs: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("session_id", "sessionId"),
-        description="可选的会话 ID；为兼容前端保留，但后端将忽略该字段。",
+        description="可选的相似历史错误文本。",
     )
 
 
@@ -92,10 +170,6 @@ class DebugResponse(_BaseSchema):
     )
     prevention: List[str] = Field(
         description="预防建议列表（字符串数组）。示例：['增加类型检查']。",
-    )
-    raw_model_output: Optional[str] = Field(
-        default=None,
-        description="模型原始输出文本，便于调试或回溯。可能为空。",
     )
 
 
